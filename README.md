@@ -400,7 +400,7 @@ requirements.txt
 # Installation
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/MohammedMateen0/age_gender_emotion_detection
 
 cd age_gender_emotion_detection
 
