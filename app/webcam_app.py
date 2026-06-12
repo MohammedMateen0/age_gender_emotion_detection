@@ -19,8 +19,9 @@ from PIL import Image
 from torchvision import transforms
 from streamlit_webrtc import webrtc_streamer
 
-from src.model import AgeGenderNet
 
+from src.model import AgeGenderNet
+from src.emotion_model import EmotionNet
 
 AGE_CLASSES = {
     0: "0-10",
@@ -36,12 +37,34 @@ GENDER_CLASSES = {
     1: "Female"
 }
 
+EMOTIONS = {
+    0: "Angry",
+    1: "Disgust",
+    2: "Fear",
+    3: "Happy",
+    4: "Neutral",
+    5: "Sad",
+    6: "Surprise"
+}
 
 device = torch.device(
     "cuda"
     if torch.cuda.is_available()
     else "cpu"
 )
+
+emotion_model = EmotionNet().to(device)
+
+emotion_checkpoint = torch.load(
+    "best_emotion_model.pth",
+    map_location=device
+)
+
+emotion_model.load_state_dict(
+    emotion_checkpoint["model_state_dict"]
+)
+
+emotion_model.eval()
 
 model = AgeGenderNet().to(device)
 
@@ -122,6 +145,10 @@ def video_frame_callback(frame):
                 tensor
             )
 
+            emotion_logits = emotion_model(
+                tensor
+            )
+
             age_probs = torch.softmax(
                 age_logits,
                 dim=1
@@ -129,6 +156,11 @@ def video_frame_callback(frame):
 
             gender_probs = torch.softmax(
                 gender_logits,
+                dim=1
+            )
+
+            emotion_probs = torch.softmax(
+                emotion_logits,
                 dim=1
             )
 
@@ -142,6 +174,11 @@ def video_frame_callback(frame):
                 dim=1
             ).item()
 
+            emotion_pred = torch.argmax(
+                emotion_probs,
+                dim=1
+            ).item()
+
             age_conf = (
                 age_probs.max().item()
                 * 100
@@ -152,14 +189,24 @@ def video_frame_callback(frame):
                 * 100
             )
 
+            emotion_conf = (
+                emotion_probs.max().item()
+                * 100
+            )
+
         age_text = (
-            f"{AGE_CLASSES[age_pred]}"
+            f"Age: {AGE_CLASSES[age_pred]}"
             f" ({age_conf:.1f}%)"
         )
 
         gender_text = (
-            f"{GENDER_CLASSES[gender_pred]}"
+            f"Gender: {GENDER_CLASSES[gender_pred]}"
             f" ({gender_conf:.1f}%)"
+        )
+
+        emotion_text = (
+            f"Emotion: {EMOTIONS[emotion_pred]}"
+            f" ({emotion_conf:.1f}%)"
         )
 
         cv2.rectangle(
@@ -173,20 +220,30 @@ def video_frame_callback(frame):
         cv2.putText(
             img,
             age_text,
-            (x, y - 35),
+            (x, y - 60),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.7,
-            (0, 255, 0),
+            (0,255,0),
             2
         )
 
         cv2.putText(
             img,
             gender_text,
+            (x, y - 35),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0,255,0),
+            2
+        )
+
+        cv2.putText(
+            img,
+            emotion_text,
             (x, y - 10),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.7,
-            (0, 255, 0),
+            (0,255,0),
             2
         )
 

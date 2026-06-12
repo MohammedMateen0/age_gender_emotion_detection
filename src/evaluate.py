@@ -10,9 +10,10 @@ from sklearn.metrics import (
 from torchvision import transforms
 from torch.utils.data import DataLoader
 from torch.utils.data import random_split
-
+from torchvision.datasets import ImageFolder
 from age_gender_dataset import AgeGenderDataset
 from model import AgeGenderNet
+from emotion_model import EmotionNet
 
 device=torch.device(
     "cuda"
@@ -32,6 +33,31 @@ dataset=AgeGenderDataset(
     root_dir="data/UTKFace/UTKFace",
     transform=transform
 )
+
+emotion_transform = transforms.Compose([
+    transforms.Grayscale(
+        num_output_channels=3
+    ),
+    transforms.Resize((224,224)),
+    transforms.ToTensor(),
+    transforms.Normalize(
+        mean=[0.485,0.456,0.406],
+        std=[0.229,0.224,0.225]
+    )
+])
+
+test_dataset=ImageFolder(
+    "data/FER2013/test",
+    transform=emotion_transform
+)
+
+test_loader=DataLoader(
+    test_dataset,
+    batch_size=32,
+    shuffle=False
+)
+
+
 train_size=int(
     0.8*len(dataset)
 )
@@ -57,14 +83,40 @@ model.load_state_dict(
 )
 
 model.eval()
+emotion_model = EmotionNet().to(device)
 
+emotion_checkpoint = torch.load(
+    "best_emotion_model.pth",
+    map_location=device
+)
+
+emotion_model.load_state_dict(
+    emotion_checkpoint["model_state_dict"]
+)
+
+emotion_model.eval()
 age_true=[]
 age_pred=[]
 gender_true=[]
 gender_pred=[]
+emotion_true=[]
+emotion_pred=[]
 
 
 with torch.no_grad():
+    for images,labels in test_loader:
+        images=images.to(device)
+        emotion_logits=emotion_model(images)
+        emotion_prediction=torch.argmax(
+            emotion_logits,
+            dim=1
+        )
+        emotion_true.extend(
+            labels.numpy()
+        )
+        emotion_pred.extend(
+            emotion_prediction.cpu().numpy()
+        )
     for images,age_label,gender_label in val_loader:
         images=images.to(device)
         age_logits,gender_logits=model(images)
@@ -118,6 +170,22 @@ plt.savefig(
 
 plt.close()
 
+emotion_cm=confusion_matrix(
+    emotion_true,
+    emotion_pred
+)
+
+disp=ConfusionMatrixDisplay(
+    confusion_matrix=emotion_cm
+)
+disp.plot()
+
+plt.savefig(
+    "reports/confusion_matrix_emotion.png"
+)
+
+plt.close()
+
 age_report = classification_report(
     age_true,
     age_pred
@@ -128,8 +196,13 @@ gender_report = classification_report(
     gender_pred
 )
 
+emotion_report=classification_report(
+    emotion_true,
+    emotion_pred
+)
+
 with open(
-    "reports/classification_report.txt",
+    "reports/age_report.txt",
     "w"
 ) as f:
 
@@ -141,9 +214,11 @@ with open(
         age_report
     )
 
-    f.write(
-        "\n\n"
-    )
+
+with open(
+    "reports/gender_report.txt",
+    "w"
+) as f:
 
     f.write(
         "GENDER REPORT\n"
@@ -153,8 +228,24 @@ with open(
         gender_report
     )
 
+
+with open(
+    "reports/emotion_report.txt",
+    "w"
+) as f:
+    f.write(
+        "EMOTION REPORT\n"
+    )
+
+    f.write(
+        emotion_report
+    )
+
 print("\nAGE REPORT\n")
 print(age_report)
 
 print("\nGENDER REPORT\n")
 print(gender_report)
+
+print("\n Emotion Report\n")
+print(emotion_report)
